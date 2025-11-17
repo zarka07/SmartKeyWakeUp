@@ -1,0 +1,10 @@
+rootProject.name = "SmartKeyWake"
+include(":app")
+
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
