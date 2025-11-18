@@ -1,4 +1,4 @@
-name: Android CI - build by installing gradle (robust, licenses fixed)
+name: Android CI - build by installing gradle (robust)
 
 on:
   push:
@@ -30,7 +30,6 @@ jobs:
           unzip -q commandlinetools.zip -d $ANDROID_SDK_ROOT/cmdline-tools-temp
           mkdir -p $ANDROID_SDK_ROOT/cmdline-tools/latest
           mv $ANDROID_SDK_ROOT/cmdline-tools-temp/cmdline-tools/* $ANDROID_SDK_ROOT/cmdline-tools/latest/
-          rm -f commandlinetools.zip
         shell: bash
 
       - name: Add sdkmanager to PATH
@@ -39,50 +38,49 @@ jobs:
           echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
         shell: bash
 
-      - name: Try accept SDK licenses (non-fatal)
+      - name: Accept SDK licenses (tries yes, then expect fallback)
         run: |
-          # ensure sdkmanager is on PATH for this step
-          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"
-          echo "Trying non-interactive license acceptance (may return non-zero)..."
-          # Try simple yes first but do not fail the job if it returns non-zero
-          yes | sdkmanager --licenses || echo "sdkmanager --licenses returned non-zero (ignored) - continuing"
-          echo "License acceptance attempted; actual package installs will accept on the fly."
+          set -e
+          if command -v sdkmanager >/dev/null 2>&1; then
+            yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || echo "yes failed -> will try expect"
+          fi
+          if ! $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses < /dev/null >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y expect
+            /usr/bin/expect <<'EOF'
+            set timeout -1
+            spawn $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses
+            expect {
+              -re "Review licenses that have not been accepted" { exp_continue }
+              -re "\\? (y/N)?" { send "y\r"; exp_continue }
+              eof
+            }
+            EOF
+          fi
         shell: bash
         env:
           ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
 
-      - name: Install SDK packages (accept licenses on the fly)
+      - name: Install SDK packages
         run: |
-          # ensure sdkmanager on PATH
-          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"
-          # install required packages; 'yes |' will accept any license prompts during install
           yes | sdkmanager --sdk_root=${{ env.ANDROID_SDK_ROOT }} "platform-tools" "platforms;android-33" "build-tools;33.0.2"
-          sdkmanager --list
         shell: bash
-        env:
-          ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
 
       - name: Download and install Gradle 9.4.2
         run: |
           GRADLE_VER=9.4.2
           curl -sSfLo gradle.zip "https://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip"
           unzip -q gradle.zip -d /opt/
-          rm -f gradle.zip
           echo "/opt/gradle-${GRADLE_VER}/bin" >> $GITHUB_PATH
         shell: bash
 
-      - name: Show gradle and java versions
-        run: |
-          gradle --version || true
-          java -version
-        shell: bash
+      - name: Show gradle version
+        run: gradle --version
 
       - name: Build with installed gradle
-        run: |
-          gradle --no-daemon assembleDebug
+        run: gradle --no-daemon assembleDebug
         env:
           ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
-        shell: bash
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
