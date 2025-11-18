@@ -38,10 +38,32 @@ jobs:
           echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
         shell: bash
 
-      - name: Accept SDK licenses and install platform & build-tools
+      - name: Accept SDK licenses (tries yes, then expect fallback)
         run: |
-          yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.2"
+          set -e
+          if command -v sdkmanager >/dev/null 2>&1; then
+            yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || echo "yes failed -> will try expect"
+          fi
+          if ! $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses < /dev/null >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y expect
+            /usr/bin/expect <<'EOF'
+            set timeout -1
+            spawn $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses
+            expect {
+              -re "Review licenses that have not been accepted" { exp_continue }
+              -re "\\? (y/N)?" { send "y\r"; exp_continue }
+              eof
+            }
+            EOF
+          fi
+        shell: bash
+        env:
+          ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
+
+      - name: Install SDK packages
+        run: |
+          yes | sdkmanager --sdk_root=${{ env.ANDROID_SDK_ROOT }} "platform-tools" "platforms;android-33" "build-tools;33.0.2"
         shell: bash
 
       - name: Download and install Gradle 9.4.2
@@ -55,12 +77,12 @@ jobs:
       - name: Show gradle version
         run: gradle --version
 
-      - name: Build
+      - name: Build with installed gradle
         run: gradle --no-daemon assembleDebug
         env:
           ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk

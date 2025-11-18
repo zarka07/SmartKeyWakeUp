@@ -17,7 +17,8 @@ class KeyAccessibilityService : AccessibilityService() {
             KeyEvent.KEYCODE_BUTTON_2,
             KeyEvent.KEYCODE_ASSIST,
             KeyEvent.KEYCODE_F1,
-            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            301 // <-- твой smart key
         )
     }
 
